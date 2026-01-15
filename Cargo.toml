@@ -1,0 +1,11 @@
+[workspace]
+members = [ "ocelot", "ocelot-macros","ocelot-protocol"]
+resolver = "3"
+
+[workspace.dependencies]
+ocelot-macros = { path = "ocelot-macros" }
+ocelot-protocol = { path = "ocelot-protocol" }
+
+proc-macro-crate = "3.4.0"
+syn = "2.0.114"
+quote = "1.0.43"
