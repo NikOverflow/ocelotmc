@@ -5,7 +5,7 @@ use ocelot_protocol::{
     codec::{MinecraftCodec, VarInt},
     packet::{
         MinecraftPacket,
-        configuration::ClientboundFinishConfigurationPacket,
+        configuration::{ClientboundFinishConfigurationPacket, ServerboundPluginMessage},
         handshaking::{Intent, ServerboundHandshakePacket},
         login::{ClientboundLoginSuccessPacket, ServerboundLoginStartPacket},
     },
@@ -103,6 +103,19 @@ async fn handle_connection(mut stream: TcpStream) {
                             println!(
                                 "[Server -> Client] Finish Configuration (State: Configuration, ID: {})",
                                 finish_configuration_packet.get_id()
+                            );
+                        }
+                        0x02 => {
+                            println!(
+                                "[Client -> Server] Serverbound Plugin Message (State: Configuration, ID: {})",
+                                packet_id
+                            );
+                            let packet =
+                                ServerboundPluginMessage::deserialize(&mut packet_buffer).unwrap();
+                            println!(
+                                "Channel: {}, Data: {:?}",
+                                packet.get_channel().0,
+                                packet.get_data(),
                             );
                         }
                         0x03 => {

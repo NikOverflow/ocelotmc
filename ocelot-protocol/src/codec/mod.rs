@@ -7,6 +7,15 @@ pub trait MinecraftCodec: Sized {
     fn decode<R: Read>(reader: &mut R) -> io::Result<Self>;
 }
 
+/// A [`String`] with a compile-time length bound.
+///
+/// Example:
+/// ```
+/// pub struct ServerboundLoginStartPacket {
+///     name: BoundedString<16>,
+///     player_uuid: Uuid,
+/// }
+/// ```
 #[derive(Clone)]
 pub struct BoundedString<const MAX: u64>(pub String);
 impl<const MAX: u64> BoundedString<MAX> {
@@ -140,6 +149,18 @@ impl MinecraftCodec for Uuid {
         let mut buffer = [0u8; 16];
         reader.read_exact(&mut buffer)?;
         Ok(Uuid::from_u128(u128::from_be_bytes(buffer)))
+    }
+}
+
+impl MinecraftCodec for Vec<u8> {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(self)
+    }
+
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(buf)
     }
 }
 
