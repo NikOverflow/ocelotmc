@@ -1,11 +1,14 @@
 use std::io::{self, Read, Write};
 
+use uuid::Uuid;
+
 pub trait MinecraftCodec: Sized {
     fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()>;
     fn decode<R: Read>(reader: &mut R) -> io::Result<Self>;
 }
 
-pub struct BoundedString<const MAX: u64>(String);
+#[derive(Clone)]
+pub struct BoundedString<const MAX: u64>(pub String);
 impl<const MAX: u64> BoundedString<MAX> {
     const MAX_LENGTH: u64 = 32767;
 
@@ -119,53 +122,6 @@ impl MinecraftCodec for VarLong {
     }
 }
 
-impl MinecraftCodec for bool {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&[if *self { 1 } else { 0 }])
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut byte = [0u8; 1];
-        reader.read_exact(&mut byte)?;
-        match byte[0] {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid boolean value: '{}'!", byte[0]),
-            )),
-        }
-    }
-}
-impl MinecraftCodec for i8 {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 1];
-        reader.read_exact(&mut buffer)?;
-        Ok(i8::from_be_bytes(buffer))
-    }
-}
-impl MinecraftCodec for u8 {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 1];
-        reader.read_exact(&mut buffer)?;
-        Ok(u8::from_be_bytes(buffer))
-    }
-}
-impl MinecraftCodec for i16 {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 2];
-        reader.read_exact(&mut buffer)?;
-        Ok(i16::from_be_bytes(buffer))
-    }
-}
 impl MinecraftCodec for u16 {
     fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(&self.to_be_bytes())
@@ -176,24 +132,14 @@ impl MinecraftCodec for u16 {
         Ok(u16::from_be_bytes(buffer))
     }
 }
-impl MinecraftCodec for i32 {
+impl MinecraftCodec for Uuid {
     fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
+        writer.write_all(&self.as_u128().to_be_bytes())
     }
     fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 4];
+        let mut buffer = [0u8; 16];
         reader.read_exact(&mut buffer)?;
-        Ok(i32::from_be_bytes(buffer))
-    }
-}
-impl MinecraftCodec for i64 {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 8];
-        reader.read_exact(&mut buffer)?;
-        Ok(i64::from_be_bytes(buffer))
+        Ok(Uuid::from_u128(u128::from_be_bytes(buffer)))
     }
 }
 

@@ -1,14 +1,45 @@
+use darling::{FromDeriveInput, FromField, FromVariant, ast};
 use proc_macro::TokenStream;
-use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro_crate::FoundCrate;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Ident, LitInt, parse_macro_input};
+use syn::{DeriveInput, Expr, Ident, Path, Type, parse_macro_input};
 
-#[proc_macro_derive(Packet, attributes(packet))]
-pub fn packet_derive(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
+const PRIMITIVES: [&str; 16] = [
+    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
+    "f64", "char", "bool",
+];
 
-    let root = match crate_name("ocelot-protocol")
+#[derive(FromDeriveInput)]
+#[darling(attributes(codec), supports(enum_unit))]
+struct CodecReceiver {
+    ident: Ident,
+    #[darling(rename = "via")]
+    codec: Path,
+    data: ast::Data<CodecVariantReceiver, ()>,
+}
+
+#[derive(FromVariant)]
+struct CodecVariantReceiver {
+    ident: Ident,
+    discriminant: Option<Expr>,
+}
+
+#[derive(FromDeriveInput)]
+#[darling(attributes(packet), supports(struct_named))]
+struct PacketReceiver {
+    ident: Ident,
+    id: i32,
+    data: ast::Data<(), PacketFieldReceiver>,
+}
+
+#[derive(FromField)]
+struct PacketFieldReceiver {
+    ident: Option<Ident>,
+    ty: Type,
+}
+
+fn get_root_path() -> proc_macro2::TokenStream {
+    match proc_macro_crate::crate_name("ocelot-protocol")
         .expect("ocelot-protocol crate is not present in Cargo.toml!")
     {
         FoundCrate::Itself => quote!(crate),
@@ -16,29 +47,86 @@ pub fn packet_derive(input: TokenStream) -> TokenStream {
             let identifier = format_ident!("{}", name);
             quote!(::#identifier)
         }
-    };
-
-    let fields = if let Data::Struct(r#struct) = &input.data {
-        &r#struct.fields
-    } else {
-        panic!("Packet derive is only allowed for structs!")
-    };
-
-    let mut id: Option<i32> = None;
-
-    for attribute in &input.attrs {
-        if attribute.path().is_ident("packet") {
-            id = Some(
-                attribute
-                    .parse_args::<LitInt>()
-                    .expect("Packet id is invalid!")
-                    .base10_parse::<i32>()
-                    .expect("Packet id is invalid!"),
-            );
-        }
     }
-    let packet_id = id.expect("Packet id is required!");
+}
 
+#[proc_macro_derive(MinecraftCodec, attributes(codec))]
+pub fn codec_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let receiver = match CodecReceiver::from_derive_input(&input) {
+        Ok(res) => res,
+        Err(err) => return err.write_errors().into(),
+    };
+    let root = get_root_path();
+
+    let name = &receiver.ident;
+    let codec_path = &receiver.codec;
+    let codec_str = quote!(#codec_path).to_string();
+    let variants = receiver.data.take_enum().unwrap(); // This can't fail at the moment.
+    let encode_arms: Vec<_> = variants
+        .iter()
+        .map(|variant| {
+            let ident = &variant.ident;
+            let discriminant = variant
+                .discriminant
+                .as_ref()
+                .expect("Explicit discriminant required!");
+            let value = if PRIMITIVES.contains(&codec_str.as_str()) {
+                quote! { (#discriminant as #codec_path) }
+            } else {
+                quote! { #codec_path((#discriminant) as _) }
+            };
+            quote! { Self::#ident => #codec_path::encode(&#value, writer)?, }
+        })
+        .collect();
+    let decode_arms: Vec<_> = variants
+        .iter()
+        .map(|variant| {
+            let ident = &variant.ident;
+            let discriminant = &variant
+                .discriminant
+                .as_ref()
+                .expect("Explicit discriminant required!");
+            let pattern = if PRIMITIVES.contains(&codec_str.as_str()) {
+                quote! { id if id == (#discriminant as #codec_path) }
+            } else {
+                quote! { #codec_path(inner) if inner == ((#discriminant) as _) }
+            };
+            quote! { #pattern => Ok(Self::#ident), }
+        })
+        .collect();
+    let expanded = quote! {
+        impl #root::codec::MinecraftCodec for #name {
+            fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                match self {
+                    #(#encode_arms)*
+                }
+                Ok(())
+            }
+            fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let id = #codec_path::decode(reader)?;
+                match id {
+                    #(#decode_arms)*
+                    _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown id for enum {}", stringify!(#name)))),
+                }
+            }
+        }
+    };
+    TokenStream::from(expanded)
+}
+
+#[proc_macro_derive(Packet, attributes(packet))]
+pub fn packet_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let receiver = match PacketReceiver::from_derive_input(&input) {
+        Ok(res) => res,
+        Err(err) => return err.write_errors().into(),
+    };
+    let root = get_root_path();
+
+    let name = &receiver.ident;
+    let packet_id = receiver.id;
+    let fields = receiver.data.take_struct().unwrap().fields; // This can't fail at the moment.
     let field_names: Vec<&Ident> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
     let getter_names: Vec<Ident> = field_names
         .iter()

@@ -7,5 +7,12 @@ ocelot-macros = { path = "ocelot-macros" }
 ocelot-protocol = { path = "ocelot-protocol" }
 
 proc-macro-crate = "3.4.0"
+proc-macro2 = "1.0.105"
 syn = "2.0.114"
 quote = "1.0.43"
+darling = "0.23.0"
+
+uuid = "1.19.0"
+
+tokio = "1.49.0"
+tokio-util = "0.7.18"
