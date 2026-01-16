@@ -131,16 +131,30 @@ impl MinecraftCodec for VarLong {
     }
 }
 
-impl MinecraftCodec for u16 {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_be_bytes())
-    }
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 2];
-        reader.read_exact(&mut buffer)?;
-        Ok(u16::from_be_bytes(buffer))
-    }
+macro_rules! minecraft_codec_int {
+    ($type_name:ty) => {
+        impl MinecraftCodec for $type_name {
+            fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                writer.write_all(&self.to_be_bytes())
+            }
+            fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let mut buffer = [0u8; size_of::<Self>()];
+                reader.read_exact(&mut buffer)?;
+                Ok(Self::from_be_bytes(buffer))
+            }
+        }
+    };
 }
+
+minecraft_codec_int!(u8);
+minecraft_codec_int!(i8);
+minecraft_codec_int!(u16);
+minecraft_codec_int!(i16);
+minecraft_codec_int!(u32);
+minecraft_codec_int!(i32);
+minecraft_codec_int!(u64);
+minecraft_codec_int!(i64);
+
 impl MinecraftCodec for Uuid {
     fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(&self.as_u128().to_be_bytes())
@@ -158,9 +172,72 @@ impl MinecraftCodec for Vec<u8> {
     }
 
     fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
-        Ok(buf)
+        let mut buffer = Vec::new();
+        reader.read_to_end(&mut buffer)?;
+        Ok(buffer)
+    }
+}
+
+impl MinecraftCodec for bool {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(&[*self as u8])
+    }
+
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buffer = [0u8; 1];
+        reader.read_exact(&mut buffer)?;
+        match buffer[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bool is too big!",
+            )),
+        }
+    }
+}
+
+// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Prefixed_Array
+pub struct PrefixedArray<T>(pub Vec<T>);
+
+impl<T: MinecraftCodec> MinecraftCodec for PrefixedArray<T> {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        VarInt(self.0.len() as i32).encode(writer)?;
+        for value in self.0.iter() {
+            value.encode(writer)?;
+        }
+        Ok(())
+    }
+
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let len = VarInt::decode(reader)?.0;
+        let mut result = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            result.push(T::decode(reader)?);
+        }
+        Ok(PrefixedArray(result))
+    }
+}
+
+impl<T: MinecraftCodec> MinecraftCodec for Option<T> {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        match self {
+            Some(value) => {
+                true.encode(writer)?;
+                value.encode(writer)
+            }
+            None => false.encode(writer),
+        }
+    }
+
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let exists = bool::decode(reader)?;
+        if exists {
+            let value = T::decode(reader)?;
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
     }
 }
 

@@ -2,13 +2,15 @@ use std::io::{Error, Read, Write};
 
 use ocelot_protocol::{
     buffer::PacketBuffer,
-    codec::{MinecraftCodec, VarInt},
+    codec::{BoundedString, MinecraftCodec, PrefixedArray, VarInt},
     packet::{
         MinecraftPacket,
         configuration::{ClientboundFinishConfigurationPacket, ServerboundPluginMessage},
         handshaking::{Intent, ServerboundHandshakePacket},
         login::{ClientboundLoginSuccessPacket, ServerboundLoginStartPacket},
+        play,
     },
+    types::Identifier,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::io::SyncIoBridge;
@@ -123,7 +125,36 @@ async fn handle_connection(mut stream: TcpStream) {
                                 "[Client -> Server] Acknowledge Finish Configuration (State: Configuration, ID: {}):",
                                 packet_id
                             );
+                            let login_packet = play::ClientboundLoginPacket::new(
+                                0,
+                                false,
+                                PrefixedArray(Vec::new()),
+                                VarInt(1),
+                                VarInt(8),
+                                VarInt(8),
+                                false,
+                                false,
+                                false,
+                                VarInt(0),
+                                Identifier::from_string(
+                                    BoundedString::new("minecraft:overworld").unwrap(),
+                                ),
+                                0,
+                                0,
+                                -1,
+                                false,
+                                false,
+                                None,
+                                VarInt(0),
+                                VarInt(60),
+                                false,
+                            );
                             player.current_state = ConnectionState::PLAY;
+                            send_packet(&login_packet, &mut bridge);
+                            println!(
+                                "[Server -> Client] Login (State: Play, ID: {})",
+                                login_packet.get_id()
+                            );
                         }
                         _ => {
                             eprintln!(
