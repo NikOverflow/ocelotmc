@@ -9,7 +9,7 @@ use ocelot_protocol::{
     packet::{
         MinecraftPacket,
         configuration::{
-            self, ClientboundFinishConfigurationPacket, ClientboundKnownPacksPacket, KnownPacks, ServerboundAcknowledgeFinishConfigurationPacket, ServerboundClientInformationPacket, ServerboundKnownPacksPacket, ServerboundPluginMessagePacket
+            self, ClientboundFinishConfigurationPacket, ClientboundKnownPacksPacket, KnownPacks, ServerboundAcknowledgeFinishConfigurationPacket, ServerboundClientInformationPacket, ServerboundKnownPacksPacket
         },
         handshaking::{Intent, ServerboundHandshakePacket},
         login::{
