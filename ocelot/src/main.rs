@@ -9,13 +9,16 @@ use ocelot_protocol::{
     packet::{
         MinecraftPacket,
         configuration::{
-            self, ClientboundFinishConfigurationPacket, ClientboundKnownPacksPacket, KnownPacks, ServerboundAcknowledgeFinishConfigurationPacket, ServerboundClientInformationPacket, ServerboundKnownPacksPacket
+            self, ClientboundFinishConfigurationPacket, ClientboundKnownPacksPacket, KnownPacks,
+            ServerboundAcknowledgeFinishConfigurationPacket, ServerboundClientInformationPacket,
+            ServerboundKnownPacksPacket,
         },
         handshaking::{Intent, ServerboundHandshakePacket},
         login::{
             ClientboundLoginSuccessPacket, Properties, ServerboundLoginAcknowledgedPacket,
             ServerboundLoginStartPacket,
-        }, play,
+        },
+        play,
     },
     types::Identifier,
 };
@@ -232,14 +235,14 @@ async fn handle_connection(mut stream: TcpStream) {
                             }]));
                         send_packet(&known_packs_packet, &mut bridge, &player.state);
                     }
-		    0x02 => {
-			let packet = read_packet::<configuration::ServerboundPluginMessagePacket>(
-			    &mut packet_buffer,
-			    &player.state,
-			);
-			println!("Channel: {}", packet.get_channel().0);
-			println!("Data: {:?}", packet.get_data())
-		    }
+                    0x02 => {
+                        let packet = read_packet::<configuration::ServerboundPluginMessagePacket>(
+                            &mut packet_buffer,
+                            &player.state,
+                        );
+                        println!("Channel: {}", packet.get_channel().0);
+                        println!("Data: {:?}", packet.get_data())
+                    }
                     0x07 => {
                         let packet = read_packet::<ServerboundKnownPacksPacket>(
                             &mut packet_buffer,
@@ -263,7 +266,7 @@ async fn handle_connection(mut stream: TcpStream) {
                             &player.state,
                         );
                         player.state = ConnectionState::PLAY;
-                            
+
                         let login_packet = play::ClientboundLoginPacket::new(
                             0,
                             false,
