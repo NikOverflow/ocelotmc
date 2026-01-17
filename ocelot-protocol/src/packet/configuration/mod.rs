@@ -8,7 +8,7 @@ pub struct ClientboundFinishConfigurationPacket {}
 
 #[derive(Packet)]
 #[packet(id = 0x02)]
-pub struct ServerboundPluginMessage {
+pub struct ServerboundPluginMessagePacket {
     channel: BoundedString<32767>,
     data: Vec<u8>,
 }
