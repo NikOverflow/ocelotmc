@@ -191,6 +191,12 @@ impl NamedTag {
         }
     }
 
+    fn encode_binary_to_network<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.1.tag_type().encode_binary(writer)?;
+        debug_assert_eq!(self.0, "");
+        self.1.encode_binary(writer)
+    }
+
     fn decode_binary_from_network<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
         let tag_type = TagType::decode_binary(reader)?;
         if tag_type == TagType::End {
