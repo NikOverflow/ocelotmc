@@ -1,5 +1,3 @@
-use std::fmt::{Display, Formatter};
-
 use ocelot_macros::{MinecraftCodec, Packet};
 
 use crate::codec::{BoundedString, VarInt};
@@ -10,16 +8,6 @@ pub enum Intent {
     STATUS = 1,
     LOGIN = 2,
     TRANSFER = 3,
-}
-impl Display for Intent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let name = match self {
-            Self::STATUS => "Status",
-            Self::LOGIN => "Login",
-            Self::TRANSFER => "Transfer",
-        };
-        write!(f, "{}", name)
-    }
 }
 
 #[derive(Packet)]

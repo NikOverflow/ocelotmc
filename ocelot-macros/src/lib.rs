@@ -10,12 +10,18 @@ const PRIMITIVES: [&str; 16] = [
 ];
 
 #[derive(FromDeriveInput)]
-#[darling(attributes(codec), supports(enum_unit))]
+#[darling(attributes(codec), supports(enum_unit, struct_named))]
 struct CodecReceiver {
     ident: Ident,
     #[darling(rename = "via")]
-    codec: Path,
-    data: ast::Data<CodecVariantReceiver, ()>,
+    codec: Option<Path>,
+    data: ast::Data<CodecVariantReceiver, CodecFieldReceiver>,
+}
+
+#[derive(FromField)]
+struct CodecFieldReceiver {
+    ident: Option<Ident>,
+    ty: Type,
 }
 
 #[derive(FromVariant)]
@@ -60,54 +66,95 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
     let root = get_root_path();
 
     let name = &receiver.ident;
-    let codec_path = &receiver.codec;
-    let codec_str = quote!(#codec_path).to_string();
-    let variants = receiver.data.take_enum().unwrap(); // This can't fail at the moment.
-    let encode_arms: Vec<_> = variants
-        .iter()
-        .map(|variant| {
-            let ident = &variant.ident;
-            let discriminant = variant
-                .discriminant
-                .as_ref()
-                .expect("Explicit discriminant required!");
-            let value = if PRIMITIVES.contains(&codec_str.as_str()) {
-                quote! { (#discriminant as #codec_path) }
-            } else {
-                quote! { #codec_path((#discriminant) as _) }
-            };
-            quote! { Self::#ident => #codec_path::encode(&#value, writer)?, }
-        })
-        .collect();
-    let decode_arms: Vec<_> = variants
-        .iter()
-        .map(|variant| {
-            let ident = &variant.ident;
-            let discriminant = &variant
-                .discriminant
-                .as_ref()
-                .expect("Explicit discriminant required!");
-            let pattern = if PRIMITIVES.contains(&codec_str.as_str()) {
-                quote! { id if id == (#discriminant as #codec_path) }
-            } else {
-                quote! { #codec_path(inner) if inner == ((#discriminant) as _) }
-            };
-            quote! { #pattern => Ok(Self::#ident), }
-        })
-        .collect();
-    let expanded = quote! {
-        impl #root::codec::MinecraftCodec for #name {
-            fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-                match self {
-                    #(#encode_arms)*
+
+    let expanded = match receiver.data {
+        ast::Data::Struct(fields) => {
+            let field_names: Vec<_> = fields.iter().map(|field| &field.ident).collect();
+            quote! {
+                impl #root::codec::MinecraftCodec for #name {
+                    fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                        #( #root::codec::MinecraftCodec::encode(&self.#field_names, writer)?; )*
+                        Ok(())
+                    }
+                    fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                        Ok(Self {
+                            #( #field_names: #root::codec::MinecraftCodec::decode(reader)?, )*
+                        })
+                    }
                 }
-                Ok(())
             }
-            fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-                let id = #codec_path::decode(reader)?;
-                match id {
-                    #(#decode_arms)*
-                    _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown id for enum {}", stringify!(#name)))),
+        }
+        ast::Data::Enum(variants) => {
+            let codec_path = &receiver.codec;
+            let codec_str = quote!(#codec_path).to_string();
+            let variant_names: Vec<_> = variants.iter().map(|variant| &variant.ident).collect();
+            let encode_patterns: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let ident = &variant.ident;
+                    let discriminant = variant
+                        .discriminant
+                        .as_ref()
+                        .expect("Explicit discriminant required!");
+                    let value = if PRIMITIVES.contains(&codec_str.as_str()) {
+                        quote! { (#discriminant as #codec_path) }
+                    } else {
+                        quote! { #codec_path(#discriminant) }
+                    };
+                    quote! {
+                        Self::#ident => <#codec_path as #root::codec::MinecraftCodec>::encode(&#value, writer)?,
+                    }
+                })
+                .collect();
+            let decode_patterns: Vec<_> = variants
+                .iter()
+                .map(|variant| {
+                    let ident = &variant.ident;
+                    let discriminant = &variant
+                        .discriminant
+                        .as_ref()
+                        .expect("Explicit discriminant required!");
+                    let pattern = if PRIMITIVES.contains(&codec_str.as_str()) {
+                        quote! { #discriminant }
+                    } else {
+                        quote! { #codec_path(#discriminant) }
+                    };
+                    quote! { #pattern => Ok(Self::#ident), }
+                })
+                .collect();
+            let display_names: Vec<String> = variants
+                .iter()
+                .map(|variant| {
+                    let ident = variant.ident.to_string();
+                    let mut lowercase = ident.to_lowercase();
+                    if let Some(first) = lowercase.get_mut(0..1) {
+                        first.make_ascii_uppercase();
+                    }
+                    lowercase
+                })
+                .collect();
+            quote! {
+                impl #root::codec::MinecraftCodec for #name {
+                    fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                        match self {
+                            #(#encode_patterns)*
+                        }
+                        Ok(())
+                    }
+                    fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                        let id: #codec_path = <#codec_path as #root::codec::MinecraftCodec>::decode(reader)?;
+                        match id {
+                            #(#decode_patterns)*
+                            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown id for enum {}", stringify!(#name)))),
+                        }
+                    }
+                }
+                impl std::fmt::Display for #name {
+                    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        match self {
+                            #( Self::#variant_names => write!(formatter, "{}", #display_names), )*
+                        }
+                    }
                 }
             }
         }
@@ -158,7 +205,7 @@ pub fn packet_derive(input: TokenStream) -> TokenStream {
             }
             fn deserialize(buffer: &mut #root::buffer::PacketBuffer) -> std::io::Result<Self> {
                 Ok(Self {
-                    #( #field_names: #root::codec::MinecraftCodec::decode(buffer)?, )*
+                    #( #field_names: <#field_types as #root::codec::MinecraftCodec>::decode(buffer)?, )*
                 })
             }
         }
