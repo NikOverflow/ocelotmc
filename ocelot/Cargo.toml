@@ -8,3 +8,5 @@ ocelot-protocol.workspace = true
 
 tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros"] }
 tokio-util = {workspace = true, features = ["io-util"] }
+
+uuid.workspace = true

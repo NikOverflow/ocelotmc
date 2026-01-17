@@ -1,5 +1,6 @@
 use std::io::{self, Read, Write};
 
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 
 pub trait MinecraftCodec: Sized {
@@ -49,6 +50,7 @@ impl<const MAX: u64> MinecraftCodec for BoundedString<MAX> {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct VarInt(pub i32);
 impl VarInt {
     const SEGMENT_BITS: u32 = 0x7F;
@@ -131,6 +133,98 @@ impl MinecraftCodec for VarLong {
     }
 }
 
+pub struct Json<T>(pub T);
+impl<T> MinecraftCodec for Json<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        let json_string = serde_json::to_string(&self.0)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let bounded_string = BoundedString::<32767>::new(json_string)?;
+        bounded_string.encode(writer)
+    }
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let bounded_string = BoundedString::<32767>::decode(reader)?;
+        let res = serde_json::from_str(&bounded_string.0)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(Json(res))
+    }
+}
+
+pub struct PrefixedArray<T>(pub Vec<T>);
+impl<T: MinecraftCodec> PrefixedArray<T> {
+    fn new(array: Vec<T>) -> Self {
+        Self(array)
+    }
+    fn decode_items<R: Read>(reader: &mut R, size: usize) -> io::Result<Self> {
+        let mut result = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            result.push(T::decode(reader)?);
+        }
+        Ok(Self(result))
+    }
+}
+impl<T: MinecraftCodec> MinecraftCodec for PrefixedArray<T> {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        VarInt(self.0.len() as i32).encode(writer)?;
+        self.0.iter().try_for_each(|value| value.encode(writer))
+    }
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let size = VarInt::decode(reader)?.0;
+        Self::decode_items(reader, size as usize)
+    }
+}
+
+pub struct BoundedPrefixedArray<T, const MAX: u64>(pub PrefixedArray<T>);
+impl<T: MinecraftCodec, const MAX: u64> BoundedPrefixedArray<T, MAX> {
+    pub fn new(array: Vec<T>) -> Self {
+        Self(PrefixedArray::new(array))
+    }
+}
+impl<T: MinecraftCodec, const MAX: u64> MinecraftCodec for BoundedPrefixedArray<T, MAX> {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        if self.0.0.len() > MAX as usize {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Array is too long!",
+            ));
+        }
+        self.0.encode(writer)
+    }
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let size = VarInt::decode(reader)?.0;
+        if size > MAX as i32 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Array is too long!",
+            ));
+        }
+        Ok(Self(PrefixedArray::<T>::decode_items(
+            reader,
+            size as usize,
+        )?))
+    }
+}
+
+impl MinecraftCodec for bool {
+    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(&[*self as u8])
+    }
+    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buffer = [0u8; 1];
+        reader.read_exact(&mut buffer)?;
+        match buffer[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid boolean value!",
+            )),
+        }
+    }
+}
+
 macro_rules! minecraft_codec_int {
     ($type_name:ty) => {
         impl MinecraftCodec for $type_name {
@@ -175,47 +269,6 @@ impl MinecraftCodec for Vec<u8> {
         let mut buffer = Vec::new();
         reader.read_to_end(&mut buffer)?;
         Ok(buffer)
-    }
-}
-
-impl MinecraftCodec for bool {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&[*self as u8])
-    }
-
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buffer = [0u8; 1];
-        reader.read_exact(&mut buffer)?;
-        match buffer[0] {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "bool is too big!",
-            )),
-        }
-    }
-}
-
-// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Prefixed_Array
-pub struct PrefixedArray<T>(pub Vec<T>);
-
-impl<T: MinecraftCodec> MinecraftCodec for PrefixedArray<T> {
-    fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        VarInt(self.0.len() as i32).encode(writer)?;
-        for value in self.0.iter() {
-            value.encode(writer)?;
-        }
-        Ok(())
-    }
-
-    fn decode<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let len = VarInt::decode(reader)?.0;
-        let mut result = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            result.push(T::decode(reader)?);
-        }
-        Ok(PrefixedArray(result))
     }
 }
 

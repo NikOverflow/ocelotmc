@@ -6,4 +6,6 @@ edition = "2024"
 [dependencies]
 ocelot-macros.workspace = true
 
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true

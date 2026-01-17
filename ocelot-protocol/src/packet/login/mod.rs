@@ -1,7 +1,7 @@
-use ocelot_macros::Packet;
+use ocelot_macros::{MinecraftCodec, Packet};
 use uuid::Uuid;
 
-use crate::codec::{BoundedString, VarInt};
+use crate::codec::{BoundedPrefixedArray, BoundedString};
 
 #[derive(Packet)]
 #[packet(id = 0x00)]
@@ -14,10 +14,16 @@ pub struct ServerboundLoginStartPacket {
 #[packet(id = 0x03)]
 pub struct ServerboundLoginAcknowledgedPacket {}
 
+#[derive(MinecraftCodec)]
+pub struct Properties {
+    name: BoundedString<64>,
+    value: BoundedString<32767>,
+}
+
 #[derive(Packet)]
 #[packet(id = 0x02)]
 pub struct ClientboundLoginSuccessPacket {
     uuid: Uuid,
     username: BoundedString<16>,
-    test: VarInt,
+    properties: BoundedPrefixedArray<Properties, 16>,
 }
