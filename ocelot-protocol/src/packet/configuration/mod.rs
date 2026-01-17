@@ -6,6 +6,13 @@ use crate::codec::{BoundedString, PrefixedArray, VarInt};
 #[packet(id = 0x03)]
 pub struct ClientboundFinishConfigurationPacket {}
 
+#[derive(Packet)]
+#[packet(id = 0x02)]
+pub struct ServerboundPluginMessage {
+    channel: BoundedString<32767>,
+    data: Vec<u8>,
+}
+
 #[derive(MinecraftCodec)]
 #[codec(via = VarInt)]
 pub enum ChatMode {

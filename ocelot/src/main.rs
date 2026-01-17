@@ -17,8 +17,9 @@ use ocelot_protocol::{
         login::{
             ClientboundLoginSuccessPacket, Properties, ServerboundLoginAcknowledgedPacket,
             ServerboundLoginStartPacket,
-        },
+        }, play,
     },
+    types::Identifier,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::io::SyncIoBridge;
@@ -251,11 +252,37 @@ async fn handle_connection(mut stream: TcpStream) {
                         send_packet(&finish_configuration_packet, &mut bridge, &player.state);
                     }
                     0x03 => {
-                        let packet = read_packet::<ServerboundAcknowledgeFinishConfigurationPacket>(
+                        let _packet = read_packet::<ServerboundAcknowledgeFinishConfigurationPacket>(
                             &mut packet_buffer,
                             &player.state,
                         );
                         player.state = ConnectionState::PLAY;
+                            
+                        let login_packet = play::ClientboundLoginPacket::new(
+                            0,
+                            false,
+                            PrefixedArray(Vec::new()),
+                            VarInt(1),
+                            VarInt(8),
+                            VarInt(8),
+                            false,
+                            false,
+                            false,
+                            VarInt(0),
+                            Identifier::from_string(
+                                BoundedString::new("minecraft:overworld").unwrap(),
+                            ),
+                            0,
+                            0,
+                            -1,
+                            false,
+                            false,
+                            None,
+                            VarInt(0),
+                            VarInt(60),
+                            false,
+                        );
+                        send_packet(&login_packet, &mut bridge, &player.state);
                     }
                     _ => eprintln!(
                         "[Client -> Server] ??? (State: {}, ID: {})",
