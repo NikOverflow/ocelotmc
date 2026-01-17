@@ -1,5 +1,5 @@
 [workspace]
-members = [ "ocelot", "ocelot-macros","ocelot-protocol"]
+members = [ "ocelot", "ocelot-macros", "ocelot-nbt","ocelot-protocol"]
 resolver = "3"
 
 [workspace.dependencies]
