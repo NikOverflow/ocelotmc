@@ -131,6 +131,7 @@ impl Tag {
             }
             Self::Compound(named_tags) => {
                 named_tags.iter().try_for_each(|(name, tag)| {
+                    tag.tag_type().encode_binary(writer)?;
                     name.encode_binary(writer)?;
                     tag.encode_binary(writer)
                 })?;
@@ -292,9 +293,6 @@ mod tests {
 
     #[test]
     fn hello_world_nbt() {
-        // let data =
-        //     hex::decode("0a000b68656c6c6f20776f726c640800046e616d65000942616e616e72616d6100")
-        //         .unwrap();
         let data = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/src/hello_world.nbt")).unwrap();
         let nbt = NamedTag::decode_binary(&mut Cursor::new(data))
             .unwrap()
@@ -307,6 +305,22 @@ mod tests {
             )])),
         );
         assert_eq!(nbt, expected);
+    }
+
+    #[test]
+    fn hello_world_write() {
+        let nbt = NamedTag(
+            "hello world".into(),
+            Tag::Compound(HashMap::from([(
+                "name".into(),
+                Tag::String("Bananrama".into()),
+            )])),
+        );
+        let expected =
+            fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/src/hello_world.nbt")).unwrap();
+        let mut data = Vec::new();
+        nbt.encode_binary(&mut data).unwrap();
+        assert_eq!(expected, data);
     }
 
     #[test]
@@ -356,6 +370,21 @@ mod tests {
 	])));
         compare_nbt(&mut nbt, &mut expected, &mut vec![]);
         assert_eq!(nbt, expected);
+    }
+
+    #[test]
+    fn bigtest_nbt_write() {
+        let data = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bigtest.nbt")).unwrap();
+        let decoded = NamedTag::decode_binary(&mut Cursor::new(data))
+            .unwrap()
+            .unwrap();
+        let mut encoded = Vec::new();
+        decoded.encode_binary(&mut encoded).unwrap();
+        let redecoded = NamedTag::decode_binary(&mut Cursor::new(encoded))
+            .unwrap()
+            .unwrap();
+        compare_nbt(&redecoded, &decoded, &mut vec![]);
+        assert_eq!(redecoded, decoded);
     }
 
     #[test]
@@ -409,6 +438,25 @@ mod tests {
 	])));
         compare_nbt(&mut nbt, &mut expected, &mut vec![]);
         assert_eq!(nbt, expected);
+    }
+
+    #[test]
+    fn bigtest_nbt_network_write() {
+        let data = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/bigtest-network.nbt"
+        ))
+        .unwrap();
+        let decoded = NamedTag::decode_binary_from_network(&mut Cursor::new(data))
+            .unwrap()
+            .unwrap();
+        let mut encoded = Vec::new();
+        decoded.encode_binary_to_network(&mut encoded).unwrap();
+        let redecoded = NamedTag::decode_binary_from_network(&mut Cursor::new(encoded))
+            .unwrap()
+            .unwrap();
+        compare_nbt(&redecoded, &decoded, &mut vec![]);
+        assert_eq!(redecoded, decoded);
     }
 
     fn compare_nbt(nbt: &NamedTag, expected: &NamedTag, path: &mut Vec<String>) {
