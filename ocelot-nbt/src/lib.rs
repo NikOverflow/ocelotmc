@@ -1,4 +1,7 @@
-use std::io::{self, Read, Write};
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+};
 
 pub trait NbtBinaryCodec: Sized {
     fn encode_binary<W: Write>(&self, writer: &mut W) -> io::Result<()>;
@@ -66,7 +69,8 @@ impl NbtBinaryCodec for TagType {
 
 #[derive(Debug, PartialEq)]
 pub enum Tag {
-    End,
+    // End does not exist in memory, so having it representable might increase bugs
+    // End,
     Byte(i8),
     Short(i16),
     Int(i32),
@@ -76,7 +80,7 @@ pub enum Tag {
     ByteArray(Vec<i8>),
     String(String),
     List(TagType, Vec<Tag>),
-    Compound(Vec<NamedTag>),
+    Compound(HashMap<String, Tag>),
     IntArray(Vec<i32>),
     LongArray(Vec<i64>),
 }
@@ -87,7 +91,6 @@ pub struct NamedTag(String, Tag);
 impl Tag {
     pub fn tag_type(&self) -> TagType {
         match self {
-            Tag::End => TagType::End,
             Tag::Byte(_) => TagType::Byte,
             Tag::Short(_) => TagType::Short,
             Tag::Int(_) => TagType::Int,
@@ -111,7 +114,6 @@ impl Tag {
 
     fn encode_binary<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         match self {
-            Self::End => Ok(()),
             Self::Byte(data) => data.encode_binary(writer),
             Self::Short(data) => data.encode_binary(writer),
             Self::Int(data) => data.encode_binary(writer),
@@ -128,9 +130,10 @@ impl Tag {
                     .try_for_each(|tag| tag.encode_binary(writer))
             }
             Self::Compound(named_tags) => {
-                named_tags
-                    .iter()
-                    .try_for_each(|tag| tag.encode_binary(writer))?;
+                named_tags.iter().try_for_each(|(name, tag)| {
+                    name.encode_binary(writer)?;
+                    tag.encode_binary(writer)
+                })?;
                 TagType::End.encode_binary(writer)
             }
             Self::IntArray(items) => items.encode_binary(writer),
@@ -139,7 +142,10 @@ impl Tag {
     }
     fn decode_binary<R: Read>(tag_type: TagType, reader: &mut R) -> io::Result<Self> {
         match tag_type {
-            TagType::End => Ok(Self::End),
+            TagType::End => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Trying to deserialize tag of type End",
+            )),
             TagType::Byte => Ok(Self::Byte(NbtBinaryCodec::decode_binary(reader)?)),
             TagType::Short => Ok(Self::Short(NbtBinaryCodec::decode_binary(reader)?)),
             TagType::Int => Ok(Self::Int(NbtBinaryCodec::decode_binary(reader)?)),
@@ -158,11 +164,13 @@ impl Tag {
                 Ok(Self::List(tag_type, buffer))
             }
             TagType::Compound => {
-                let mut buffer = Vec::new();
-                let mut otag = NamedTag::decode_binary(reader)?;
-                while let Some(tag) = otag {
-                    buffer.push(tag);
-                    otag = NamedTag::decode_binary(reader)?;
+                let mut buffer = HashMap::new();
+                let mut tag_type = TagType::decode_binary(reader)?;
+                while tag_type != TagType::End {
+                    let name = String::decode_binary(reader)?;
+                    let tag = Tag::decode_binary(tag_type, reader)?;
+                    buffer.insert(name, tag);
+                    tag_type = TagType::decode_binary(reader)?;
                 }
                 Ok(Self::Compound(buffer))
             }
@@ -292,10 +300,10 @@ mod tests {
             .unwrap();
         let expected = NamedTag(
             "hello world".into(),
-            Tag::Compound(vec![NamedTag(
+            Tag::Compound(HashMap::from([(
                 "name".into(),
                 Tag::String("Bananrama".into()),
-            )]),
+            )])),
         );
         assert_eq!(nbt, expected);
     }
@@ -307,44 +315,44 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let mut expected = NamedTag("Level".into(), Tag::Compound(vec![
-	    NamedTag("nested compound test".into(), Tag::Compound(vec![
-		NamedTag("egg".into(), Tag::Compound(vec![
-		    NamedTag("name".into(), Tag::String("Eggbert".into())),
-		    NamedTag("value".into(), Tag::Float(0.5)),
-		])),
-		NamedTag("ham".into(), Tag::Compound(vec![
-		    NamedTag("name".into(), Tag::String("Hampus".into())),
-		    NamedTag("value".into(), Tag::Float(0.75)),
-		])),
-	    ])),
-	    NamedTag("intTest".into(), Tag::Int(2147483647)),
-	    NamedTag("byteTest".into(), Tag::Byte(127)),
-	    //	    NamedTag("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!".into())),
-	    NamedTag("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING ÅÄÖ!".into())),
-	    NamedTag("listTest (long)".into(), Tag::List(TagType::Long, vec![
+        let mut expected = NamedTag("Level".into(), Tag::Compound(HashMap::from([
+	    ("nested compound test".into(), Tag::Compound(HashMap::from([
+		("egg".into(), Tag::Compound(HashMap::from([
+		    ("name".into(), Tag::String("Eggbert".into())),
+		    ("value".into(), Tag::Float(0.5)),
+		]))),
+		("ham".into(), Tag::Compound(HashMap::from([
+		    ("name".into(), Tag::String("Hampus".into())),
+		    ("value".into(), Tag::Float(0.75)),
+		]))),
+	    ]))),
+	    ("intTest".into(), Tag::Int(2147483647)),
+	    ("byteTest".into(), Tag::Byte(127)),
+	    //	    ("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!".into())),
+	    ("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING ÅÄÖ!".into())),
+	    ("listTest (long)".into(), Tag::List(TagType::Long, vec![
 		Tag::Long(11),
 		Tag::Long(12),
 		Tag::Long(13),
 		Tag::Long(14),
 		Tag::Long(15),
 	    ])),
-	    NamedTag("doubleTest".into(), Tag::Double(0.49312871321823148)),
-	    NamedTag("floatTest".into(), Tag::Float(0.49823147058486938)),
-	    NamedTag("longTest".into(), Tag::Long(9223372036854775807)),
-	    NamedTag("listTest (compound)".into(), Tag::List(TagType::Compound, vec![
-		Tag::Compound(vec![
-		    NamedTag("created-on".into(), Tag::Long(1264099775885)),
-		    NamedTag("name".into(), Tag::String("Compound tag #0".into())),
-		]),
-		Tag::Compound(vec![
-		    NamedTag("created-on".into(), Tag::Long(1264099775885)),
-		    NamedTag("name".into(), Tag::String("Compound tag #1".into())),
-		]),
+	    ("doubleTest".into(), Tag::Double(0.49312871321823148)),
+	    ("floatTest".into(), Tag::Float(0.49823147058486938)),
+	    ("longTest".into(), Tag::Long(9223372036854775807)),
+	    ("listTest (compound)".into(), Tag::List(TagType::Compound, vec![
+		Tag::Compound(HashMap::from([
+		    ("created-on".into(), Tag::Long(1264099775885)),
+		    ("name".into(), Tag::String("Compound tag #0".into())),
+		])),
+		Tag::Compound(HashMap::from([
+		    ("created-on".into(), Tag::Long(1264099775885)),
+		    ("name".into(), Tag::String("Compound tag #1".into())),
+		])),
 	    ])),
-	    NamedTag("byteArrayTest (the first 1000 values of (n*n*255+n*7)%100, starting with n=0 (0, 62, 34, 16, 8, ...))".into(), Tag::ByteArray(create_byte_array())),
-	    NamedTag("shortTest".into(), Tag::Short(32767)),
-	]));
+	    ("byteArrayTest (the first 1000 values of (n*n*255+n*7)%100, starting with n=0 (0, 62, 34, 16, 8, ...))".into(), Tag::ByteArray(create_byte_array())),
+	    ("shortTest".into(), Tag::Short(32767)),
+	])));
         compare_nbt(&mut nbt, &mut expected, &mut vec![]);
         assert_eq!(nbt, expected);
     }
@@ -356,56 +364,56 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let mut expected = NamedTag("".into(), Tag::Compound(vec![
-	    NamedTag("nested compound test".into(), Tag::Compound(vec![
-		NamedTag("egg".into(), Tag::Compound(vec![
-		    NamedTag("name".into(), Tag::String("Eggbert".into())),
-		    NamedTag("value".into(), Tag::Float(0.5)),
-		])),
-		NamedTag("ham".into(), Tag::Compound(vec![
-		    NamedTag("name".into(), Tag::String("Hampus".into())),
-		    NamedTag("value".into(), Tag::Float(0.75)),
-		])),
-	    ])),
-	    NamedTag("intTest".into(), Tag::Int(2147483647)),
-	    NamedTag("byteTest".into(), Tag::Byte(127)),
-	    //	    NamedTag("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!".into())),
-	    NamedTag("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING ÅÄÖ!".into())),
-	    NamedTag("listTest (long)".into(), Tag::List(TagType::Long, vec![
+        let mut expected = NamedTag("".into(), Tag::Compound(HashMap::from([
+	    ("nested compound test".into(), Tag::Compound(HashMap::from([
+		("egg".into(), Tag::Compound(HashMap::from([
+		    ("name".into(), Tag::String("Eggbert".into())),
+		    ("value".into(), Tag::Float(0.5)),
+		]))),
+		("ham".into(), Tag::Compound(HashMap::from([
+		    ("name".into(), Tag::String("Hampus".into())),
+		    ("value".into(), Tag::Float(0.75)),
+		]))),
+	    ]))),
+	    ("intTest".into(), Tag::Int(2147483647)),
+	    ("byteTest".into(), Tag::Byte(127)),
+	    //	    ("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!".into())),
+	    ("stringTest".into(), Tag::String("HELLO WORLD THIS IS A TEST STRING ÅÄÖ!".into())),
+	    ("listTest (long)".into(), Tag::List(TagType::Long, vec![
 		Tag::Long(11),
 		Tag::Long(12),
 		Tag::Long(13),
 		Tag::Long(14),
 		Tag::Long(15),
 	    ])),
-	    NamedTag("doubleTest".into(), Tag::Double(0.49312871321823148)),
-	    NamedTag("floatTest".into(), Tag::Float(0.49823147058486938)),
-	    NamedTag("longTest".into(), Tag::Long(9223372036854775807)),
-	    NamedTag("listTest (compound)".into(), Tag::List(TagType::Compound, vec![
-		Tag::Compound(vec![
-		    NamedTag("created-on".into(), Tag::Long(1264099775885)),
-		    NamedTag("name".into(), Tag::String("Compound tag #0".into())),
-		]),
-		Tag::Compound(vec![
-		    NamedTag("created-on".into(), Tag::Long(1264099775885)),
-		    NamedTag("name".into(), Tag::String("Compound tag #1".into())),
-		]),
+	    ("doubleTest".into(), Tag::Double(0.49312871321823148)),
+	    ("floatTest".into(), Tag::Float(0.49823147058486938)),
+	    ("longTest".into(), Tag::Long(9223372036854775807)),
+	    ("listTest (compound)".into(), Tag::List(TagType::Compound, vec![
+		Tag::Compound(HashMap::from([
+		    ("created-on".into(), Tag::Long(1264099775885)),
+		    ("name".into(), Tag::String("Compound tag #0".into())),
+		])),
+		Tag::Compound(HashMap::from([
+		    ("created-on".into(), Tag::Long(1264099775885)),
+		    ("name".into(), Tag::String("Compound tag #1".into())),
+		])),
 	    ])),
-	    NamedTag("byteArrayTest (the first 1000 values of (n*n*255+n*7)%100, starting with n=0 (0, 62, 34, 16, 8, ...))".into(), Tag::ByteArray(create_byte_array())),
-	    NamedTag("shortTest".into(), Tag::Short(32767)),
-	]));
+	    ("byteArrayTest (the first 1000 values of (n*n*255+n*7)%100, starting with n=0 (0, 62, 34, 16, 8, ...))".into(), Tag::ByteArray(create_byte_array())),
+	    ("shortTest".into(), Tag::Short(32767)),
+	])));
         compare_nbt(&mut nbt, &mut expected, &mut vec![]);
         assert_eq!(nbt, expected);
     }
 
-    fn compare_nbt(nbt: &mut NamedTag, expected: &mut NamedTag, path: &mut Vec<String>) {
+    fn compare_nbt(nbt: &NamedTag, expected: &NamedTag, path: &mut Vec<String>) {
         assert_eq!(nbt.0, expected.0, "{:?}", path);
         path.push(nbt.0.clone());
-        compare_tag(&mut nbt.1, &mut expected.1, path);
+        compare_tag(&nbt.1, &expected.1, path);
         path.pop();
     }
 
-    fn compare_tag(nbt: &mut Tag, expected: &mut Tag, path: &mut Vec<String>) {
+    fn compare_tag(nbt: &Tag, expected: &Tag, path: &mut Vec<String>) {
         match expected {
             Tag::Compound(expected_tags) => match nbt {
                 Tag::Compound(nbt_tags) => {
@@ -415,10 +423,20 @@ mod tests {
                         "Size differs in compound at {:?}",
                         path
                     );
-                    nbt_tags.sort_unstable_by(|tag1, tag2| tag1.0.cmp(&tag2.0));
-                    expected_tags.sort_unstable_by(|tag1, tag2| tag1.0.cmp(&tag2.0));
-                    for i in 0..expected_tags.len() {
-                        compare_nbt(&mut nbt_tags[i], &mut expected_tags[i], path);
+                    for (expected_name, expected_element) in expected_tags {
+                        if let Some(nbt_element) = nbt_tags.get(expected_name) {
+                            path.push(expected_name.clone());
+                            compare_tag(nbt_element, expected_element, path);
+                            path.pop();
+                        } else {
+                            assert!(
+                                false,
+                                "Expected element with name {:?} at {:?}, other names: {:?}",
+                                expected_name,
+                                path,
+                                nbt_tags.keys()
+                            )
+                        }
                     }
                 }
                 _ => assert!(false, "Expected a compound at {:?} but got {:?}", path, nbt),
@@ -434,7 +452,7 @@ mod tests {
                     );
                     for i in 0..expected_tags.len() {
                         path.push(i.to_string());
-                        compare_tag(&mut nbt_tags[i], &mut expected_tags[i], path);
+                        compare_tag(&nbt_tags[i], &expected_tags[i], path);
                         path.pop();
                     }
                 }
