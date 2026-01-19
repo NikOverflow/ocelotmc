@@ -155,6 +155,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocelot-nbt"
+version = "0.1.0"
+
+[[package]]
 name = "ocelot-protocol"
 version = "0.1.0"
 dependencies = [
