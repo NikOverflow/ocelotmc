@@ -1,6 +1,15 @@
 use ocelot_macros::{MinecraftCodec, Packet};
 
-use crate::codec::{BoundedString, PrefixedArray, VarInt};
+use crate::{
+    codec::{BoundedString, PrefixedArray, VarInt},
+    types::Identifier,
+};
+
+#[derive(Packet)]
+#[packet(id = 0x00)]
+pub struct ClientboundCookieRequestPacket {
+    key: Identifier,
+}
 
 #[derive(Packet)]
 #[packet(id = 0x03)]
@@ -71,4 +80,17 @@ pub struct ClientboundKnownPacksPacket {
 #[packet(id = 0x07)]
 pub struct ServerboundKnownPacksPacket {
     known_packs: PrefixedArray<KnownPacks>,
+}
+
+#[derive(MinecraftCodec)]
+pub struct RegistryEntry {
+    pub id: Identifier,
+    pub data: Option<Vec<u8>>,
+}
+
+#[derive(Packet)]
+#[packet(id = 0x07)]
+pub struct ClientboundRegistryDataPacket {
+    registry_id: Identifier,
+    entries: PrefixedArray<RegistryEntry>,
 }

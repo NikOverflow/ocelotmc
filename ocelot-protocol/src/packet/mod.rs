@@ -3,6 +3,7 @@ pub mod handshaking;
 pub mod login;
 pub mod play;
 pub mod status;
+pub mod types;
 
 use crate::buffer::PacketBuffer;
 

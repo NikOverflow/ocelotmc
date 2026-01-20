@@ -5,9 +5,9 @@ pub struct Identifier {
 }
 
 impl Identifier {
-    pub const namespace_regex: &str = "[a-z0-9.-_]";
-    pub const value_regex: &str = "[a-z0-9.-_/]";
-    pub const total_regex: &str = "[a-z0-9.-_]:[a-z0-9.-_/]";
+    pub const NAMESPACE_REGEX: &str = "[a-z0-9.-_]";
+    pub const VALUE_REGEX: &str = "[a-z0-9.-_/]";
+    pub const TOTAL_REGEX: &str = "[a-z0-9.-_]:[a-z0-9.-_/]";
 
     pub fn from_string(namespaced_value: BoundedString<32767>) -> Self {
         // TODO: validate that the parameter matches the regex.

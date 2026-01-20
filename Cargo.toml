@@ -1,10 +1,11 @@
 [workspace]
-members = [ "ocelot", "ocelot-macros", "ocelot-nbt","ocelot-protocol"]
+members = [ "ocelot",  "ocelot-data", "ocelot-macros", "ocelot-nbt", "ocelot-protocol"]
 resolver = "3"
 
 [workspace.dependencies]
 ocelot-macros = { path = "ocelot-macros" }
 ocelot-protocol = { path = "ocelot-protocol" }
+ocelot-data = { path = "ocelot-data" }
 
 proc-macro-crate = "3.4.0"
 proc-macro2 = "1.0.105"
@@ -17,4 +18,11 @@ serde = "1.0.228"
 serde_json = "1.0.149"
 
 tokio = "1.49.0"
-tokio-util = "0.7.18"
+
+fastnbt = "2.6.0"
+
+reqwest = "0.13.1"
+rand = "0.9.2"
+openssl = "0.10.75"
+sha1 = "0.10.6"
+num-bigint = "0.4.6"

@@ -5,8 +5,14 @@ edition = "2024"
 
 [dependencies]
 ocelot-protocol.workspace = true
+ocelot-data.workspace = true
 
 tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros"] }
-tokio-util = {workspace = true, features = ["io-util"] }
 
 uuid.workspace = true
+
+reqwest = { workspace = true, features = ["query"] }
+rand.workspace = true
+openssl.workspace = true
+sha1.workspace = true
+num-bigint.workspace = true

@@ -182,6 +182,7 @@ pub fn packet_derive(input: TokenStream) -> TokenStream {
     let field_types: Vec<&syn::Type> = fields.iter().map(|f| &f.ty).collect();
     let expanded = quote! {
         impl #name {
+            pub const ID: i32 = #packet_id;
             pub fn new(#( #field_names: #field_types, )*) -> Self {
                 Self {
                     #( #field_names, )*

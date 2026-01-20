@@ -12,6 +12,10 @@ pub trait MinecraftCodec: Sized {
 ///
 /// Example:
 /// ```
+/// use ocelot_protocol::codec::BoundedString;
+///
+/// use uuid::Uuid;
+///
 /// pub struct ServerboundLoginStartPacket {
 ///     name: BoundedString<16>,
 ///     player_uuid: Uuid,
