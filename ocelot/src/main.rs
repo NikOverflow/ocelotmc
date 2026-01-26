@@ -8,23 +8,19 @@ use num_bigint::BigInt;
 use ocelot_data::registry::SYNCED_REGISTRIES;
 use ocelot_protocol::{
     buffer::PacketBuffer,
-    codec::{BoundedPrefixedArray, BoundedString, MinecraftCodec, PrefixedArray, VarInt},
+    codec::{BoundedPrefixedArray, MinecraftCodec, PrefixedArray},
     packet::{
         MinecraftPacket,
         configuration::{
-            self, ClientboundFinishConfigurationPacket, ClientboundKnownPacksPacket,
-            ClientboundRegistryDataPacket, KnownPacks, RegistryEntry,
-            ServerboundAcknowledgeFinishConfigurationPacket, ServerboundClientInformationPacket,
-            ServerboundKnownPacksPacket,
+            clientbound as configuration_clientbound, serverbound as configuration_serverbound,
         },
         handshaking::serverbound as handshaking_serverbound,
-        login::clientbound as login_clientbound,
-        login::serverbound as login_serverbound,
-        play,
-        types::Intent,
+        login::{clientbound as login_clientbound, serverbound as login_serverbound},
+        play::{clientbound as play_clientbound, serverbound as play_serverbound},
+        types::{GameEvent, GameMode, Intent, KnownPack, RegistryEntry, TeleportFlags},
     },
-    types::Identifier,
 };
+use ocelot_types::{BoundedString, ResourceLocation, VarInt};
 use openssl::{
     pkey::Private,
     rsa::{Padding, Rsa},
@@ -306,9 +302,11 @@ impl Connection {
                     ),
                 },
                 ConnectionState::CONFIGURATION => match packet_id {
-                    ServerboundClientInformationPacket::ID => {
+                    configuration_serverbound::ClientInformationPacket::ID => {
                         let packet = self
-                            .read_packet::<ServerboundClientInformationPacket>(&mut packet_buffer);
+                            .read_packet::<configuration_serverbound::ClientInformationPacket>(
+                                &mut packet_buffer,
+                            );
                         println!("Packet Data:");
                         println!("Locale: {}", packet.get_locale().0);
                         println!("View Distance: {}", packet.get_view_distance());
@@ -330,25 +328,29 @@ impl Connection {
                         println!("Particle Status: {}", packet.get_particle_status());
 
                         let known_packs_packet =
-                            ClientboundKnownPacksPacket::new(PrefixedArray(vec![KnownPacks {
-                                namespace: BoundedString::<_>::new("minecraft").unwrap(),
-                                id: BoundedString::<_>::new("core").unwrap(),
-                                version: BoundedString::<_>::new("1.21.11").unwrap(),
-                            }]));
+                            configuration_clientbound::KnownPacksPacket::new(PrefixedArray(vec![
+                                KnownPack {
+                                    namespace: BoundedString::<_>::new("minecraft").unwrap(),
+                                    id: BoundedString::<_>::new("core").unwrap(),
+                                    version: BoundedString::<_>::new("1.21.11").unwrap(),
+                                },
+                            ]));
                         self.send_packet(&known_packs_packet, &mut stream).await;
                     }
-                    configuration::ServerboundPluginMessagePacket::ID => {
+                    configuration_serverbound::PluginMessagePacket::ID => {
                         let packet = self
-                            .read_packet::<configuration::ServerboundPluginMessagePacket>(
+                            .read_packet::<configuration_serverbound::PluginMessagePacket>(
                                 &mut packet_buffer,
                             );
                         println!("Packet Data:");
-                        println!("Channel: {}", packet.get_channel().0);
+                        println!("Channel: {}", packet.get_channel().to_string());
                         println!("Data: {:?}", packet.get_data());
                     }
-                    ServerboundKnownPacksPacket::ID => {
-                        let packet =
-                            self.read_packet::<ServerboundKnownPacksPacket>(&mut packet_buffer);
+                    configuration_serverbound::KnownPacksPacket::ID => {
+                        let packet = self
+                            .read_packet::<configuration_serverbound::KnownPacksPacket>(
+                                &mut packet_buffer,
+                            );
                         println!("Packet Data:");
                         println!("Known Packs:");
                         for known_pack in &packet.get_known_packs().0 {
@@ -361,34 +363,39 @@ impl Connection {
                             let mut entries = Vec::new();
                             for entry in registry.entries {
                                 entries.push(RegistryEntry {
-                                    id: Identifier::from_string(
-                                        BoundedString::new(entry.name).unwrap(),
-                                    ),
+                                    id: BoundedString::<32767>::new(entry.name)
+                                        .unwrap()
+                                        .0
+                                        .try_into()
+                                        .unwrap(),
                                     data: Some(entry.nbt_bytes.to_vec()),
                                 });
                             }
-                            let registry_data_packet = ClientboundRegistryDataPacket::new(
-                                Identifier::from_string(
-                                    BoundedString::new(registry.registry_id).unwrap(),
-                                ),
-                                PrefixedArray(entries),
-                            );
+                            let registry_data_packet =
+                                configuration_clientbound::RegistryDataPacket::new(
+                                    BoundedString::<32767>::new(registry.registry_id)
+                                        .unwrap()
+                                        .0
+                                        .try_into()
+                                        .unwrap(),
+                                    PrefixedArray(entries),
+                                );
                             self.send_packet(&registry_data_packet, &mut stream).await;
                         }
 
                         let finish_configuration_packet =
-                            ClientboundFinishConfigurationPacket::new();
+                            configuration_clientbound::FinishConfigurationPacket::new();
                         self.send_packet(&finish_configuration_packet, &mut stream)
                             .await;
                     }
-                    ServerboundAcknowledgeFinishConfigurationPacket::ID => {
-                        let _packet = self
-                            .read_packet::<ServerboundAcknowledgeFinishConfigurationPacket>(
+                    configuration_serverbound::AcknowledgeFinishConfigurationPacket::ID => {
+                        let _ = self
+                            .read_packet::<configuration_serverbound::AcknowledgeFinishConfigurationPacket>(
                                 &mut packet_buffer,
                             );
                         self.state = ConnectionState::PLAY;
 
-                        let login_packet = play::ClientboundLoginPacket::new(
+                        let login_packet = play_clientbound::LoginPacket::new(
                             0,
                             false,
                             PrefixedArray(Vec::new()),
@@ -399,12 +406,10 @@ impl Connection {
                             false,
                             false,
                             VarInt(0),
-                            Identifier::from_string(
-                                BoundedString::new("minecraft:overworld").unwrap(),
-                            ),
+                            ResourceLocation::from_vanilla("overworld").unwrap(),
                             0,
-                            0,
-                            -1,
+                            GameMode::Survival,
+                            GameMode::Undefined,
                             false,
                             false,
                             None,
@@ -413,6 +418,26 @@ impl Connection {
                             false,
                         );
                         self.send_packet(&login_packet, &mut stream).await;
+                        let game_event_packet = play_clientbound::GameEventPacket::new(
+                            GameEvent::StartWaitingForLevelChunks,
+                            0.0,
+                        );
+                        self.send_packet(&game_event_packet, &mut stream).await;
+                        let synchronize_player_position_packet =
+                            play_clientbound::SynchronizePlayerPositionPacket::new(
+                                VarInt(1),
+                                0.0,
+                                -128.0,
+                                0.0,
+                                0.0,
+                                -128.0,
+                                0.0,
+                                0.0,
+                                0.0,
+                                TeleportFlags::empty(),
+                            );
+                        self.send_packet(&synchronize_player_position_packet, &mut stream)
+                            .await;
                     }
                     _ => eprintln!(
                         "[Client -> Server] ??? (State: {}, ID: {})",
@@ -420,6 +445,11 @@ impl Connection {
                     ),
                 },
                 ConnectionState::PLAY => match packet_id {
+                    play_serverbound::ClientTickEndPacket::ID => {
+                        let _ = self.read_packet::<play_serverbound::ClientTickEndPacket>(
+                            &mut packet_buffer,
+                        );
+                    }
                     _ => eprintln!(
                         "[Client -> Server] ??? (State: {}, ID: {})",
                         self.state, packet_id

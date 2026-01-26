@@ -1,11 +1,14 @@
 [package]
 name = "ocelot-protocol"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 ocelot-macros.workspace = true
+ocelot-types.workspace = true
 
 uuid = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+
+bitflags.workspace = true

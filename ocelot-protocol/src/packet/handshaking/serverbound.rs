@@ -1,11 +1,9 @@
-use ocelot_macros::Packet;
+use ocelot_macros::MinecraftPacket;
+use ocelot_types::{BoundedString, VarInt};
 
-use crate::{
-    codec::{BoundedString, VarInt},
-    packet::types::Intent,
-};
+use crate::packet::types::Intent;
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x00)]
 pub struct HandshakePacket {
     protocol_version: VarInt,

@@ -1,30 +1,4 @@
-use crate::codec::{BoundedString, MinecraftCodec};
-
-pub struct Identifier {
-    namespaced_value: BoundedString<32767>,
-}
-
-impl Identifier {
-    pub const NAMESPACE_REGEX: &str = "[a-z0-9.-_]";
-    pub const VALUE_REGEX: &str = "[a-z0-9.-_/]";
-    pub const TOTAL_REGEX: &str = "[a-z0-9.-_]:[a-z0-9.-_/]";
-
-    pub fn from_string(namespaced_value: BoundedString<32767>) -> Self {
-        // TODO: validate that the parameter matches the regex.
-        Self { namespaced_value }
-    }
-}
-
-impl MinecraftCodec for Identifier {
-    fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.namespaced_value.encode(writer)
-    }
-
-    fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let namespaced_value = BoundedString::decode(reader)?;
-        Ok(Self::from_string(namespaced_value))
-    }
-}
+use crate::codec::MinecraftCodec;
 
 pub struct Position {
     x: i32,

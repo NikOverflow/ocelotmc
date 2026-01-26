@@ -1,20 +1,19 @@
-use ocelot_macros::Packet;
+use ocelot_macros::MinecraftPacket;
+use ocelot_types::text::TextComponent;
+use ocelot_types::{BoundedString, ResourceLocation, VarInt};
 use uuid::Uuid;
 
-use crate::{
-    codec::{BoundedPrefixedArray, BoundedString, PrefixedArray, VarInt},
-    types::Identifier,
-};
+use crate::codec::{BoundedPrefixedArray, Json, PrefixedArray};
 
 use crate::packet::types::Properties;
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x00)]
 pub struct DisconnectPacket {
-    //text_component: Json<TextComponent>
+    text_component: Json<TextComponent>,
 }
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x01)]
 pub struct EncryptionRequestPacket {
     server_id: BoundedString<20>,
@@ -23,7 +22,7 @@ pub struct EncryptionRequestPacket {
     should_authenticate: bool,
 }
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x02)]
 pub struct LoginSuccessPacket {
     uuid: Uuid,
@@ -31,22 +30,22 @@ pub struct LoginSuccessPacket {
     properties: BoundedPrefixedArray<Properties, 16>,
 }
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x03)]
 pub struct SetCompressionPacket {
     threshold: VarInt,
 }
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x04)]
 pub struct LoginPluginRequestPacket {
     message_id: VarInt,
-    channel: Identifier,
+    channel: ResourceLocation,
     data: Vec<u8>,
 }
 
-#[derive(Packet)]
+#[derive(MinecraftPacket)]
 #[packet(id = 0x05)]
 pub struct CookieRequestPacket {
-    key: Identifier,
+    key: ResourceLocation,
 }

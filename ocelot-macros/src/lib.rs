@@ -8,6 +8,8 @@ const PRIMITIVES: [&str; 16] = [
     "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
     "f64", "char", "bool",
 ];
+const PROTOCOL_CRATE: &str = "ocelot-protocol";
+const TYPES_CRATE: &str = "ocelot-types";
 
 #[derive(FromDeriveInput)]
 #[darling(attributes(codec), supports(enum_unit, struct_named))]
@@ -21,7 +23,6 @@ struct CodecReceiver {
 #[derive(FromField)]
 struct CodecFieldReceiver {
     ident: Option<Ident>,
-    ty: Type,
 }
 
 #[derive(FromVariant)]
@@ -44,10 +45,11 @@ struct PacketFieldReceiver {
     ty: Type,
 }
 
-fn get_root_path() -> proc_macro2::TokenStream {
-    match proc_macro_crate::crate_name("ocelot-protocol")
-        .expect("ocelot-protocol crate is not present in Cargo.toml!")
-    {
+fn get_root_path(crate_name: &str) -> proc_macro2::TokenStream {
+    match proc_macro_crate::crate_name(crate_name).expect(&format!(
+        "{} crate is not present in Cargo.toml!",
+        crate_name
+    )) {
         FoundCrate::Itself => quote!(crate),
         FoundCrate::Name(name) => {
             let identifier = format_ident!("{}", name);
@@ -63,7 +65,7 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
         Ok(res) => res,
         Err(err) => return err.write_errors().into(),
     };
-    let root = get_root_path();
+    let protocol_crate = get_root_path(PROTOCOL_CRATE);
 
     let name = &receiver.ident;
 
@@ -71,14 +73,14 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
         ast::Data::Struct(fields) => {
             let field_names: Vec<_> = fields.iter().map(|field| &field.ident).collect();
             quote! {
-                impl #root::codec::MinecraftCodec for #name {
+                impl #protocol_crate::codec::MinecraftCodec for #name {
                     fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-                        #( #root::codec::MinecraftCodec::encode(&self.#field_names, writer)?; )*
+                        #( #protocol_crate::codec::MinecraftCodec::encode(&self.#field_names, writer)?; )*
                         Ok(())
                     }
                     fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
                         Ok(Self {
-                            #( #field_names: #root::codec::MinecraftCodec::decode(reader)?, )*
+                            #( #field_names: #protocol_crate::codec::MinecraftCodec::decode(reader)?, )*
                         })
                     }
                 }
@@ -102,7 +104,7 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
                         quote! { #codec_path(#discriminant) }
                     };
                     quote! {
-                        Self::#ident => <#codec_path as #root::codec::MinecraftCodec>::encode(&#value, writer)?,
+                        Self::#ident => <#codec_path as #protocol_crate::codec::MinecraftCodec>::encode(&#value, writer)?,
                     }
                 })
                 .collect();
@@ -134,7 +136,7 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
                 })
                 .collect();
             quote! {
-                impl #root::codec::MinecraftCodec for #name {
+                impl #protocol_crate::codec::MinecraftCodec for #name {
                     fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                         match self {
                             #(#encode_patterns)*
@@ -142,7 +144,7 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
                         Ok(())
                     }
                     fn decode<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-                        let id: #codec_path = <#codec_path as #root::codec::MinecraftCodec>::decode(reader)?;
+                        let id: #codec_path = <#codec_path as #protocol_crate::codec::MinecraftCodec>::decode(reader)?;
                         match id {
                             #(#decode_patterns)*
                             _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown id for enum {}", stringify!(#name)))),
@@ -162,14 +164,15 @@ pub fn codec_derive(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(Packet, attributes(packet))]
+#[proc_macro_derive(MinecraftPacket, attributes(packet))]
 pub fn packet_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let receiver = match PacketReceiver::from_derive_input(&input) {
         Ok(res) => res,
         Err(err) => return err.write_errors().into(),
     };
-    let root = get_root_path();
+    let protocol_crate = get_root_path(PROTOCOL_CRATE);
+    let types_crate = get_root_path(TYPES_CRATE);
 
     let name = &receiver.ident;
     let packet_id = receiver.id;
@@ -194,19 +197,19 @@ pub fn packet_derive(input: TokenStream) -> TokenStream {
                 }
             )*
         }
-        impl #root::packet::MinecraftPacket for #name {
+        impl #protocol_crate::packet::MinecraftPacket for #name {
             fn get_id(&self) -> i32 {
                 #packet_id
             }
             fn serialize(&self) -> std::io::Result<Vec<u8>> {
-                let mut writer = #root::buffer::PacketWriter::new();
-                #root::codec::MinecraftCodec::encode(&#root::codec::VarInt(#packet_id), &mut writer)?;
-                #( #root::codec::MinecraftCodec::encode(&self.#field_names, &mut writer)?; )*
+                let mut writer = #protocol_crate::buffer::PacketWriter::new();
+                #protocol_crate::codec::MinecraftCodec::encode(&#types_crate::VarInt(#packet_id), &mut writer)?;
+                #( #protocol_crate::codec::MinecraftCodec::encode(&self.#field_names, &mut writer)?; )*
                 Ok(writer.build())
             }
-            fn deserialize(buffer: &mut #root::buffer::PacketBuffer) -> std::io::Result<Self> {
+            fn deserialize(buffer: &mut #protocol_crate::buffer::PacketBuffer) -> std::io::Result<Self> {
                 Ok(Self {
-                    #( #field_names: <#field_types as #root::codec::MinecraftCodec>::decode(buffer)?, )*
+                    #( #field_names: <#field_types as #protocol_crate::codec::MinecraftCodec>::decode(buffer)?, )*
                 })
             }
         }
